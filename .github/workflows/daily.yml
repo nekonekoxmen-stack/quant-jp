@@ -54,9 +54,12 @@ jobs:
           JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
         run: |
           if [ ! -d data/daily_quotes ] || [ -z "$(ls -A data/daily_quotes 2>/dev/null)" ]; then
-            echo "データ未取得 → 初回フル取得（約10年分, 数十分）"
-            $PY -m quant_jp.data.ingest pull 2016-05-29 "$(date +%Y-%m-%d)"
-            $PY -m quant_jp.data.ingest listed_history 2016-05-01 "$(date +%Y-%m-01)"
+            # Standard プランはローリング10年。境界ちょうどは400になるため少し余裕(10年+7日後)
+            START=$(date -d "10 years ago +7 days" +%Y-%m-%d)
+            MSTART=$(date -d "10 years ago +1 month" +%Y-%m-01)
+            echo "データ未取得 → 初回フル取得（${START} 〜, 数十分）"
+            $PY -m quant_jp.data.ingest pull "$START" "$(date +%Y-%m-%d)"
+            $PY -m quant_jp.data.ingest listed_history "$MSTART" "$(date +%Y-%m-01)"
           else
             echo "キャッシュあり → 増分更新のみ"
           fi
