@@ -28,7 +28,14 @@ jobs:
           python-version: "3.12"
 
       - name: 依存インストール
-        run: uv sync
+        run: |
+          uv sync
+          # プロジェクト本体を editable で確実にインストール（src レイアウト解決）
+          uv pip install -e .
+
+      # 保険として PYTHONPATH も通す（uv run がパッケージを見つけられない場合の冗長化）
+      - name: PYTHONPATH 設定
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE/src" >> "$GITHUB_ENV"
 
       # 過年度の重いデータ（parquet）はキャッシュで持ち回る（毎回フル取得しない）
       - name: データキャッシュ復元
