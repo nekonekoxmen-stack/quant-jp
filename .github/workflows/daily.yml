@@ -28,14 +28,17 @@ jobs:
           python-version: "3.12"
 
       - name: 依存インストール
-        run: |
-          uv sync
-          # プロジェクト本体を editable で確実にインストール（src レイアウト解決）
-          uv pip install -e .
+        run: uv sync
 
-      # 保険として PYTHONPATH も通す（uv run がパッケージを見つけられない場合の冗長化）
-      - name: PYTHONPATH 設定
-        run: echo "PYTHONPATH=$GITHUB_WORKSPACE/src" >> "$GITHUB_ENV"
+      # venv の python を直接使う（uv run は PYTHONPATH を無視するため）。
+      # PYTHONPATH=src で src レイアウトを確実に解決。
+      - name: 実行環境の設定
+        run: |
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/src" >> "$GITHUB_ENV"
+          echo "PY=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: import 動作確認
+        run: $PY -c "import quant_jp.data.ingest; print('quant_jp import OK')"
 
       # 過年度の重いデータ（parquet）はキャッシュで持ち回る（毎回フル取得しない）
       - name: データキャッシュ復元
@@ -52,8 +55,8 @@ jobs:
         run: |
           if [ ! -d data/daily_quotes ] || [ -z "$(ls -A data/daily_quotes 2>/dev/null)" ]; then
             echo "データ未取得 → 初回フル取得（約10年分, 数十分）"
-            uv run python -m quant_jp.data.ingest pull 2016-05-29 "$(date +%Y-%m-%d)"
-            uv run python -m quant_jp.data.ingest listed_history 2016-05-01 "$(date +%Y-%m-01)"
+            $PY -m quant_jp.data.ingest pull 2016-05-29 "$(date +%Y-%m-%d)"
+            $PY -m quant_jp.data.ingest listed_history 2016-05-01 "$(date +%Y-%m-01)"
           else
             echo "キャッシュあり → 増分更新のみ"
           fi
@@ -61,13 +64,13 @@ jobs:
       - name: 増分更新（当年データ）
         env:
           JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
-        run: uv run python -m quant_jp.data.ingest update
+        run: $PY -m quant_jp.data.ingest update
 
       - name: ペーパートレード台帳更新
-        run: uv run python -m quant_jp.ops.paper_trade
+        run: $PY -m quant_jp.ops.paper_trade
 
       - name: 静的ダッシュボード生成
-        run: uv run python -m quant_jp.dashboard.build_static
+        run: $PY -m quant_jp.dashboard.build_static
 
       - name: 台帳を commit（変化があれば）
         run: |
