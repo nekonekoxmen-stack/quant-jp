@@ -3,17 +3,17 @@
 *.env
 !.env.example
 
-# data lake / generated
-data/
+# data lake / generated（リポジトリ直下の data/ のみ。src 配下のパッケージは除外しない）
+/data/
 *.parquet
 *.duckdb
 
 # reports は中身を除外しつつ、ペーパー台帳だけは追跡（公開・履歴保存のため）
-reports/*
-!reports/paper_ledger.csv
+/reports/*
+!/reports/paper_ledger.csv
 
 # 公開サイト（GitHub Pages 用, Actions が生成）はビルド成果物なので追跡しない
-site/
+/site/
 
 # python
 .venv/
