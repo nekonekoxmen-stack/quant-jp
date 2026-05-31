@@ -1,0 +1,14 @@
+# Google 風・白基調テーマ（Material Design ライク）
+[theme]
+base = "light"
+primaryColor = "#1a73e8"            # Google Blue
+backgroundColor = "#ffffff"          # 純白
+secondaryBackgroundColor = "#f8f9fa" # Google のグレー背景
+textColor = "#202124"                # Google の濃いグレー文字
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

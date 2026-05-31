@@ -1,0 +1,87 @@
+name: daily-paper-trade
+
+# 平日の場引け後（JST 16:30 = UTC 07:30）に自動実行。手動実行も可。
+on:
+  schedule:
+    - cron: "30 7 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 台帳 commit 用
+  pages: write      # GitHub Pages デプロイ用
+  id-token: write
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: uv セットアップ
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存インストール
+        run: uv sync
+
+      # 過年度の重いデータ（parquet）はキャッシュで持ち回る（毎回フル取得しない）
+      - name: データキャッシュ復元
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: jquants-data-${{ github.run_id }}
+          restore-keys: |
+            jquants-data-
+
+      - name: 初回データ取得（キャッシュが空のときだけ）
+        env:
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
+        run: |
+          if [ ! -d data/daily_quotes ] || [ -z "$(ls -A data/daily_quotes 2>/dev/null)" ]; then
+            echo "データ未取得 → 初回フル取得（約10年分, 数十分）"
+            uv run python -m quant_jp.data.ingest pull 2016-05-29 "$(date +%Y-%m-%d)"
+            uv run python -m quant_jp.data.ingest listed_history 2016-05-01 "$(date +%Y-%m-01)"
+          else
+            echo "キャッシュあり → 増分更新のみ"
+          fi
+
+      - name: 増分更新（当年データ）
+        env:
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
+        run: uv run python -m quant_jp.data.ingest update
+
+      - name: ペーパートレード台帳更新
+        run: uv run python -m quant_jp.ops.paper_trade
+
+      - name: 静的ダッシュボード生成
+        run: uv run python -m quant_jp.dashboard.build_static
+
+      - name: 台帳を commit（変化があれば）
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f reports/paper_ledger.csv || true
+          git diff --cached --quiet || git commit -m "chore: ペーパー台帳更新 $(date +%Y-%m-%d)"
+          git push || true
+
+      - name: Pages 用アーティファクト
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: run
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: GitHub Pages へデプロイ
+        id: deployment
+        uses: actions/deploy-pages@v4
