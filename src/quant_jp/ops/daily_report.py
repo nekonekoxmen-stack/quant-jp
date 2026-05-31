@@ -45,11 +45,16 @@ def generate(capital: float = 3_000_000, top_n: int = 20, cost_bps: float = 25.0
     w = weights.loc[asof]
     w = w[w > 0].sort_values(ascending=False)
     exp = float(exposure.loc[asof])
-    px = close.loc[asof]
+    # 発注は実価格で行うため、表示・株数算出は生（無調整）株価を使う
+    raw_px = load.raw_close_panel()
+    raw_row = raw_px.loc[asof] if asof in raw_px.index else None
+    adj_row = close.loc[asof]
 
     rows = []
     for code, wt in w.items():
-        price = px.get(code, np.nan)
+        price = raw_row.get(code, np.nan) if raw_row is not None else np.nan
+        if not np.isfinite(price) or price <= 0:
+            price = adj_row.get(code, np.nan)
         if not np.isfinite(price) or price <= 0:
             continue
         # 丸め超過で資金を超えないよう余裕(0.99)を見て切り捨て

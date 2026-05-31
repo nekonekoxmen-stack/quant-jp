@@ -118,14 +118,24 @@ def run_paper(start: str = START_DATE, capital: float = INIT_CAPITAL,
 
 
 def _current_holdings(weights, exposure, close, listed, capital, asof):
-    """asof 時点の推奨保有（時価ベースの目標株数）を返す。"""
+    """asof 時点の推奨保有（目標株数）を返す。
+
+    株価・株数は**生（無調整）株価**で算出する。close_panel は分割調整後のため、
+    分割履歴のある銘柄では実際の発注価格とズレ、誤った株数になる。発注は実価格で
+    行うので、表示も実価格に統一する。
+    """
     w = weights.loc[asof]
     w = w[w > 0].sort_values(ascending=False)
     exp = float(exposure.loc[asof])
-    px = close.loc[asof]
+    raw_px = load.raw_close_panel()
+    raw_row = raw_px.loc[asof] if asof in raw_px.index else None
+    adj_row = close.loc[asof]
     rows = []
     for code, wt in w.items():
-        price = px.get(code, np.nan)
+        # 実発注用は生株価。欠損時は調整後で代替（稀）。
+        price = raw_row.get(code, np.nan) if raw_row is not None else np.nan
+        if not np.isfinite(price) or price <= 0:
+            price = adj_row.get(code, np.nan)
         if not np.isfinite(price) or price <= 0:
             continue
         target_yen = capital * wt * exp * 0.99

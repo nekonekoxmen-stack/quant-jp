@@ -69,19 +69,23 @@ def build(
     r_s, r_f, r_b = r_regime.loc[start:], r_inv.loc[start:], bench.loc[start:]
     exp = exposure.loc[start:]
 
-    # 当日の推奨ポートフォリオ
+    # 当日の推奨ポートフォリオ（株価・株数は実発注用に生株価で算出）
     asof = close.index[-1]
     w = weights.loc[asof]
     w = w[w > 0].sort_values(ascending=False)
     exposure_now = float(exposure.loc[asof])
-    px = close.loc[asof]
+    raw_px = load.raw_close_panel()
+    raw_row = raw_px.loc[asof] if asof in raw_px.index else None
+    adj_row = close.loc[asof]
     rows = []
     for code, wt in w.items():
-        price = px.get(code, np.nan)
+        price = raw_row.get(code, np.nan) if raw_row is not None else np.nan
+        if not np.isfinite(price) or price <= 0:
+            price = adj_row.get(code, np.nan)
         if not np.isfinite(price) or price <= 0:
             continue
-        target_yen = capital * wt * exposure_now
-        shares = int(round(target_yen / price))
+        target_yen = capital * wt * exposure_now * 0.99
+        shares = int(target_yen / price)
         name = str(listed["CoName"].get(code, "")) if not listed.empty else ""
         rows.append(
             {"コード": code, "銘柄": name, "比率": wt, "株価": price,
