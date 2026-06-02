@@ -96,6 +96,11 @@ def run_paper(start: str = START_DATE, capital: float = INIT_CAPITAL,
 
     r = daily_ret.reindex(idx).fillna(0.0)
     b = bench_ret.reindex(idx).fillna(0.0)
+    # 初日は建玉を組成する日（終値で取得）とし、P&L=0 から開始する。
+    # これにより初日のレジーム変更コスト等による見かけのマイナスを除く。
+    if len(r) >= 1:
+        r.iloc[0] = 0.0
+        b.iloc[0] = 0.0
     equity = capital * (1.0 + r).cumprod()
     topix_equity = capital * (1.0 + b).cumprod()
     exp_path = exposure.reindex(idx).ffill().fillna(EXPOSURE_LOW)
@@ -103,11 +108,21 @@ def run_paper(start: str = START_DATE, capital: float = INIT_CAPITAL,
     asof = idx[-1]
     holds_df, invested, cash = _current_holdings(weights, exposure, close, listed, capital, asof)
 
-    summ = metrics.summary(r, benchmark=b)
-    summ["FinalEquity"] = float(equity.iloc[-1])
-    summ["TopixEquity"] = float(topix_equity.iloc[-1])
-    summ["TotalReturn"] = float(equity.iloc[-1] / capital - 1.0)
-    summ["TopixReturn"] = float(topix_equity.iloc[-1] / capital - 1.0)
+    # サンプルが少ないうちは Sharpe/年率指標が無意味（nan）になるため抑制。
+    # 実評価日数が MIN_EVAL_DAYS 未満なら「成績ウォームアップ中」として総リターンのみ表示。
+    MIN_EVAL_DAYS = 20
+    n_days = len(r)
+    summ = {
+        "FinalEquity": float(equity.iloc[-1]),
+        "TopixEquity": float(topix_equity.iloc[-1]),
+        "TotalReturn": float(equity.iloc[-1] / capital - 1.0),
+        "TopixReturn": float(topix_equity.iloc[-1] / capital - 1.0),
+        "NDays": n_days,
+        "Warmup": n_days < MIN_EVAL_DAYS,
+    }
+    if n_days >= MIN_EVAL_DAYS:
+        full = metrics.summary(r, benchmark=b)
+        summ.update(full)
 
     return PaperResult(
         start=start_ts, asof=asof, init_capital=capital,
@@ -172,12 +187,18 @@ def _fmt(result: PaperResult) -> str:
         f"- 開始日: {result.start.date()} / 初期資金: {result.init_capital:,.0f} 円",
         f"- 基準日: {result.asof.date()}",
     ]
-    if s:
+    if s and not s.get("Warmup", False):
         lines += [
             f"- 仮想口座 評価額: **{s['FinalEquity']:,.0f} 円**（{s['TotalReturn']:+.2%}）",
             f"- 同額TOPIX: {s['TopixEquity']:,.0f} 円（{s['TopixReturn']:+.2%}）",
             f"- 対TOPIX超過(年率): {s['Excess_CAGR']:+.2%} / Sharpe {s['Sharpe']:.2f} / "
             f"最大DD {s['MaxDD']:.2%}",
+        ]
+    elif s:
+        lines += [
+            f"- 仮想口座 評価額: **{s['FinalEquity']:,.0f} 円**（{s['TotalReturn']:+.2%}）",
+            f"- 同額TOPIX: {s['TopixEquity']:,.0f} 円（{s['TopixReturn']:+.2%}）",
+            f"- 運用 {s.get('NDays', 0)} 日目（20日でSharpeなどリスクKPIの集計を開始）",
         ]
     else:
         lines.append("- （運用開始日に未達。開始日以降に成績が記録されます）")

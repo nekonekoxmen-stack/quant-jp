@@ -46,11 +46,29 @@ def _fig_html(fig: go.Figure, div_id: str, include_js: bool) -> str:
 
 def build() -> Path:
     res = run_paper()
-    has_perf = bool(res.summary)
+    s = res.summary
+    started = bool(s)  # 運用開始済みか（開始日以降のデータがあるか）
+    full = started and not s.get("Warmup", False)  # 指標が意味を持つ日数に達したか
+    has_perf = full  # チャート表示は full のときのみ
 
-    # KPI
-    if has_perf:
-        s = res.summary
+    # KPI（3状態: 運用前 / 集計中(warmup) / 通常）
+    if not started:
+        kpis = (
+            _kpi("状態", "運用開始前", f"{res.start.date()} 開始予定", "neutral")
+            + _kpi("初期資金", f"¥{res.init_capital:,.0f}", "", "neutral")
+            + _kpi("株式比率(予定)", f"{res.exposure_now:.0%}", "", "neutral")
+        )
+    elif not full:
+        n = s.get("NDays", 0)
+        kpis = (
+            _kpi("評価額", f"¥{s['FinalEquity']:,.0f}",
+                 f"{s['TotalReturn']:+.1%}", "up" if s["TotalReturn"] >= 0 else "down")
+            + _kpi("対TOPIX", f"{(s['TotalReturn']-s['TopixReturn']):+.1%}", "累計差",
+                   "up" if s["TotalReturn"] >= s["TopixReturn"] else "down")
+            + _kpi("運用日数", f"{n} 日", "20日で指標集計開始", "neutral")
+            + _kpi("株式比率", f"{res.exposure_now:.0%}", "残りは現金", "neutral")
+        )
+    else:
         kpis = (
             _kpi("評価額", f"¥{s['FinalEquity']:,.0f}",
                  f"{s['TotalReturn']:+.1%}", "up" if s["TotalReturn"] >= 0 else "down")
@@ -59,12 +77,6 @@ def build() -> Path:
             + _kpi("Sharpe", f"{s['Sharpe']:.2f}", "", "neutral")
             + _kpi("最大DD", f"{s['MaxDD']:.1%}", "", "neutral")
             + _kpi("株式比率", f"{res.exposure_now:.0%}", "残りは現金", "neutral")
-        )
-    else:
-        kpis = (
-            _kpi("状態", "運用開始前", f"{res.start.date()} 開始予定", "neutral")
-            + _kpi("初期資金", f"¥{res.init_capital:,.0f}", "", "neutral")
-            + _kpi("株式比率(予定)", f"{res.exposure_now:.0%}", "", "neutral")
         )
 
     # チャート
